@@ -28,11 +28,26 @@ final class CaptureTests: XCTestCase {
         Capture.both(String(format: "s%02d-%@", step, name), app: app, in: self)
     }
 
-    private func dismissInterruptions() {
-        for label in ["Continue", "Get Started", "Close", "Not Now", "OK", "Allow"] {
-            let button = app.buttons[label].firstMatch
-            if button.exists && button.isHittable { button.tap(); sleep(1) }
+    /// Walks the onboarding pages and closes tips or alerts, recording each page once.
+    private func dismissInterruptions(recordPages: Bool = false) {
+        let labels = ["Next", "Continue", "Get Started", "Let's Go", "Start", "Done", "Close", "Not Now", "OK", "Allow"]
+        for _ in 0..<12 {
+            guard let button = labels.lazy.map({ self.app.buttons[$0].firstMatch })
+                .first(where: { $0.exists && $0.isHittable }) else { return }
+            if recordPages { record("onboarding-\(button.label)") }
+            button.tap()
+            sleep(2)
         }
+    }
+
+    override func tearDownWithError() throws {
+        if app != nil { record("end-state") }
+    }
+
+    /// Text field by placeholder, label or identifier (SwiftUI exposes the prompt as placeholder).
+    private func field(_ name: String) -> XCUIElement {
+        let predicate = NSPredicate(format: "placeholderValue == %@ OR label == %@ OR identifier == %@", name, name, name)
+        return app.textFields.matching(predicate).firstMatch
     }
 
     private func type(into field: XCUIElement, _ text: String, submit: Bool = false) {
@@ -47,17 +62,19 @@ final class CaptureTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         sleep(5)
-        dismissInterruptions()
+        dismissInterruptions(recordPages: true)
         record("launch")
 
-        app.tabBars.buttons["Create"].tap()
+        let createTab = app.tabBars.buttons["Create"].firstMatch
+        XCTAssertTrue(createTab.waitForExistence(timeout: 10), "no Create tab after onboarding")
+        createTab.tap()
         sleep(1)
         for (index, box) in samples.enumerated() {
             dismissInterruptions()
-            type(into: app.textFields["Box Name"].firstMatch, box.name)
-            type(into: app.textFields["New Location"].firstMatch, box.location)
+            type(into: field("Box Name"), box.name)
+            type(into: field("New Location"), box.location)
             for item in box.items {
-                type(into: app.textFields["New Item"].firstMatch, item, submit: true)
+                type(into: field("New Item"), item, submit: true)
             }
             if index == 0 { record("create-filled") }
             if app.keyboards.count > 0 { app.swipeDown() }
