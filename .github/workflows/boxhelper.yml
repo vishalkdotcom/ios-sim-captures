@@ -12,6 +12,9 @@ on:
       device:
         description: "Simulator device type name"
         default: "iPhone 17 Pro"
+      xcode:
+        description: "Xcode version on the runner (Xcode_<version>.app)"
+        default: "26.2"
 
 permissions:
   contents: read
@@ -39,8 +42,11 @@ jobs:
 
       - name: Pick and boot simulator
         run: |
+          sudo xcode-select -s "/Applications/Xcode_${{ inputs.xcode }}.app"
           xcodebuild -version
-          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x['platform']=='iOS' and x['isAvailable']]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
+          SDKVER=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          echo "simulator SDK $SDKVER"
+          RUNTIME=$(xcrun simctl list runtimes -j | SDKVER="$SDKVER" python3 -c "import json,os,sys; v=os.environ['SDKVER']; r=[x for x in json.load(sys.stdin)['runtimes'] if x['platform']=='iOS' and x['isAvailable'] and x['version'].startswith(v)]; print(r[-1]['identifier'])")
           echo "runtime $RUNTIME"
           UDID=$(xcrun simctl create capture "${{ inputs.device }}" "$RUNTIME")
           echo "UDID=$UDID" >> "$GITHUB_ENV"
@@ -54,7 +60,7 @@ jobs:
         run: |
           mkdir -p shots
           cd bh
-          set -o pipefail
+          set +e
           xcodebuild test \
             -project BoxHelper.xcodeproj \
             -scheme Capture \
@@ -63,8 +69,10 @@ jobs:
             -resultBundlePath ../result.xcresult \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            2>&1 | tee ../xcodebuild.log | grep -E "error:|warning: .*BoxHelperUITests|Test Case|\*\* (BUILD|TEST)" || true
-          test "${PIPESTATUS[0]}" -eq 0
+            > ../xcodebuild.log 2>&1
+          rc=$?
+          grep -E "error:|Test Case|\*\* (BUILD|TEST)" ../xcodebuild.log | head -100
+          exit $rc
 
       - name: Final simctl screenshot
         if: always()
