@@ -21,6 +21,7 @@ final class CaptureTests: XCTestCase {
     ]
 
     private var app: XCUIApplication!
+    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     private var step = 0
 
     private func record(_ name: String) {
@@ -28,20 +29,33 @@ final class CaptureTests: XCTestCase {
         Capture.both(String(format: "s%02d-%@", step, name), app: app, in: self)
     }
 
-    /// Walks the onboarding pages and closes tips or alerts, recording each page once.
+    override func tearDownWithError() throws {
+        if app != nil { record("end-state") }
+    }
+
+    private func onScreen(_ element: XCUIElement) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let frame = element.frame
+        let window = app.windows.firstMatch.frame
+        return frame.minY >= 0 && frame.maxY <= window.maxY && frame.minX >= 0 && frame.maxX <= window.maxX
+    }
+
+    /// Walks onboarding pages and closes system alerts, keyboard tips and app tips.
     private func dismissInterruptions(recordPages: Bool = false) {
-        let labels = ["Next", "Continue", "Get Started", "Let's Go", "Start", "Done", "Close", "Not Now", "OK", "Allow"]
+        let labels = ["Next", "Continue", "Get Started", "Done", "Close", "Not Now", "OK"]
         for _ in 0..<12 {
+            let alertButton = springboard.alerts.buttons["Allow"].firstMatch
+            if alertButton.exists {
+                alertButton.tap()
+                sleep(1)
+                continue
+            }
             guard let button = labels.lazy.map({ self.app.buttons[$0].firstMatch })
-                .first(where: { $0.exists && $0.isHittable }) else { return }
-            if recordPages { record("onboarding-\(button.label)") }
+                .first(where: { self.onScreen($0) }) else { return }
+            if recordPages { record("page-\(button.label)") }
             button.tap()
             sleep(2)
         }
-    }
-
-    override func tearDownWithError() throws {
-        if app != nil { record("end-state") }
     }
 
     /// Text field by placeholder, label or identifier (SwiftUI exposes the prompt as placeholder).
@@ -50,10 +64,21 @@ final class CaptureTests: XCTestCase {
         return app.textFields.matching(predicate).firstMatch
     }
 
-    private func type(into field: XCUIElement, _ text: String, submit: Bool = false) {
+    private func replaceText(in field: XCUIElement, with text: String, submit: Bool = false) {
         XCTAssertTrue(field.waitForExistence(timeout: 10), "missing field \(field)")
         field.tap()
+        dismissInterruptions()
+        if !field.hasKeyboardFocus { field.tap() }
+        let current = (field.value as? String) ?? ""
+        if !current.isEmpty && current != field.placeholderValue {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+        }
         field.typeText(text + (submit ? "\n" : ""))
+    }
+
+    private func tab(_ label: String) -> XCUIElement {
+        let inTabBar = app.tabBars.buttons[label].firstMatch
+        return inTabBar.exists ? inTabBar : app.buttons[label].firstMatch
     }
 
     func testCapture() throws {
@@ -65,27 +90,34 @@ final class CaptureTests: XCTestCase {
         dismissInterruptions(recordPages: true)
         record("launch")
 
-        let createTab = app.tabBars.buttons["Create"].firstMatch
+        let createTab = tab("Create")
         XCTAssertTrue(createTab.waitForExistence(timeout: 10), "no Create tab after onboarding")
         createTab.tap()
-        sleep(1)
+        sleep(2)
+        dismissInterruptions()
+
         for (index, box) in samples.enumerated() {
             dismissInterruptions()
-            type(into: field("Box Name"), box.name)
-            type(into: field("New Location"), box.location)
+            // The box title is the navigation-bar text field (pre-filled with "Box N").
+            let title = app.navigationBars.textFields.firstMatch.exists
+                ? app.navigationBars.textFields.firstMatch
+                : app.textFields.matching(NSPredicate(format: "value BEGINSWITH 'Box'")).firstMatch
+            replaceText(in: title, with: box.name, submit: false)
+            replaceText(in: field("New Location"), with: box.location)
             for item in box.items {
-                type(into: field("New Item"), item, submit: true)
+                replaceText(in: field("New Item"), with: item, submit: true)
             }
             if index == 0 { record("create-filled") }
-            if app.keyboards.count > 0 { app.swipeDown() }
+            if app.keyboards.count > 0 { app.keyboards.buttons["Return"].firstMatch.tap() }
             let save = app.buttons["Save"].firstMatch
             XCTAssertTrue(save.waitForExistence(timeout: 5))
             save.tap()
             sleep(3)
+            dismissInterruptions()
             if index == 0 { record("after-first-save") }
         }
 
-        app.tabBars.buttons["Boxes"].tap()
+        tab("Boxes").tap()
         sleep(2)
         dismissInterruptions()
         record("boxes")

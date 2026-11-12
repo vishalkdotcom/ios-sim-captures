@@ -11,10 +11,10 @@ on:
         default: "7d59046cd0f759c42e47779bbb46bc638b3f4b7f"
       device:
         description: "Simulator device type name"
-        default: "iPhone 17 Pro"
+        default: "iPhone 18 Pro"
       xcode:
         description: "Xcode version on the runner (Xcode_<version>.app)"
-        default: "27.1"
+        default: "27.2"
       runner:
         description: "Runner label (standard size only)"
         default: "xcode-27"
@@ -57,9 +57,7 @@ jobs:
           xcodebuild -version
           SDKVER=$(xcrun --sdk iphonesimulator --show-sdk-version)
           echo "simulator SDK $SDKVER"
-          RUNTIME=$(xcrun simctl list runtimes -j | SDKVER="$SDKVER" python3 -c "import json,os,sys; v=os.environ['SDKVER']; r=[x for x in json.load(sys.stdin)['runtimes'] if x['platform']=='iOS' and x['isAvailable'] and x['version'].startswith(v)]; print(r[-1]['identifier'])")
-          echo "runtime $RUNTIME"
-          UDID=$(python3 scripts/pick_device.py "$RUNTIME" "${{ inputs.device }}")
+          UDID=$(python3 scripts/pick_device.py "$SDKVER" "${{ inputs.device }}")
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
