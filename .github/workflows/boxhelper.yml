@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       test:
-        description: "Test to run (-only-testing value)"
-        default: "BoxHelperUITests/ExploreTests"
+        description: "Space-separated -only-testing values"
+        default: "BoxHelperUITests/CaptureTests BoxHelperUITests/ExploreTests"
       boxhelper_ref:
         description: "BoxHelper commit or branch"
         default: "7d59046cd0f759c42e47779bbb46bc638b3f4b7f"
@@ -14,7 +14,7 @@ on:
         default: "iPhone 17 Pro"
       xcode:
         description: "Xcode version on the runner (Xcode_<version>.app)"
-        default: "26.2"
+        default: "26.4.1"
 
 permissions:
   contents: read
@@ -54,24 +54,44 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --operatorName ' ' --batteryState charged --batteryLevel 100
 
-      - name: Build and run capture test
+      - name: Build for testing (retries the intermittent .icon actool failure)
+        run: |
+          cd bh
+          for attempt in 1 2 3; do
+            xcodebuild build-for-testing \
+              -project BoxHelper.xcodeproj \
+              -scheme Capture \
+              -destination "id=$UDID" \
+              -derivedDataPath ../dd \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              > ../xcodebuild.log 2>&1 && { echo "build ok on attempt $attempt"; exit 0; }
+            echo "attempt $attempt failed:"
+            grep -E "error:|warning: Icon export" ../xcodebuild.log | head -20
+            find ../dd -name 'assetcatalog_*' -delete 2>/dev/null || true
+          done
+          exit 1
+
+      - name: Run capture tests
         env:
           TEST_RUNNER_SHOT_DIR: ${{ github.workspace }}/shots
         run: |
           mkdir -p shots
           cd bh
+          ONLY=""
+          for t in ${{ inputs.test }}; do ONLY="$ONLY -only-testing:$t"; done
           set +e
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project BoxHelper.xcodeproj \
             -scheme Capture \
             -destination "id=$UDID" \
-            -only-testing:"${{ inputs.test }}" \
+            -derivedDataPath ../dd \
+            $ONLY \
             -resultBundlePath ../result.xcresult \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            > ../xcodebuild.log 2>&1
+            > ../test.log 2>&1
           rc=$?
-          grep -E "error:|Test Case|\*\* (BUILD|TEST)" ../xcodebuild.log | head -100
+          grep -E "error|Test Case|\*\* TEST" ../test.log | head -100
+          cat ../test.log >> ../xcodebuild.log
           exit $rc
 
       - name: Final simctl screenshot
