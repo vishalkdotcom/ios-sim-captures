@@ -41,6 +41,11 @@ jobs:
           mkdir -p bh/BoxHelperUITests
           cp BoxHelperUITests/*.swift bh/BoxHelperUITests/
           cp scripts/Capture.xcscheme bh/BoxHelper.xcodeproj/xcshareddata/xcschemes/Capture.xcscheme
+          # AppIconPride.icon (an optional home-screen alternate icon) crashes actool on
+          # every runner Xcode; dropping its file reference leaves the in-app UI unchanged.
+          # The AppIconPride.appiconset in Assets.xcassets still provides that alternate.
+          sed -i '' '/AppIconPride\.icon/d' bh/BoxHelper.xcodeproj/project.pbxproj
+          git -C bh diff --stat
           git -C bh status --short
 
       - name: Pick and boot simulator
