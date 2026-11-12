@@ -14,7 +14,10 @@ on:
         default: "iPhone 17 Pro"
       xcode:
         description: "Xcode version on the runner (Xcode_<version>.app)"
-        default: "26.6"
+        default: "27.1"
+      runner:
+        description: "Runner label (standard size only)"
+        default: "xcode-27"
       diag:
         description: "Run the icon diagnostics step"
         default: "false"
@@ -24,7 +27,7 @@ permissions:
 
 jobs:
   capture:
-    runs-on: macos-26
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -93,7 +96,6 @@ jobs:
               CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
               COMPILER_INDEX_STORE_ENABLE=NO \
               OTHER_SWIFT_FLAGS='$(inherited) -Xfrontend -solver-expression-time-threshold=600' \
-              SWIFT_VERSION=5 \
               > ../xcodebuild.log 2>&1 && { echo "build ok on attempt $attempt"; exit 0; }
             echo "attempt $attempt failed:"
             grep -E "error:|warning: Icon export" ../xcodebuild.log | head -20
