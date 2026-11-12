@@ -68,7 +68,7 @@ final class CaptureTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10), "missing field \(field)")
         field.tap()
         dismissInterruptions()
-        if !field.hasKeyboardFocus { field.tap() }
+        if !((field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) { field.tap() }
         let current = (field.value as? String) ?? ""
         if !current.isEmpty && current != field.placeholderValue {
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))

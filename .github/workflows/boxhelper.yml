@@ -97,6 +97,7 @@ jobs:
               > ../xcodebuild.log 2>&1 && { echo "build ok on attempt $attempt"; exit 0; }
             echo "attempt $attempt failed:"
             grep -E "error:|warning: Icon export" ../xcodebuild.log | head -20
+            grep -q "actool" ../xcodebuild.log || exit 1
             find ../dd -name 'assetcatalog_*' -delete 2>/dev/null || true
           done
           exit 1
