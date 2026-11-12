@@ -71,11 +71,19 @@ final class CaptureTests: XCTestCase {
         field.tap()
         dismissInterruptions()
         if !((field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) { field.tap() }
-        let current = (field.value as? String) ?? ""
-        if !current.isEmpty && current != field.placeholderValue {
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+        // Typing can drop characters while the form re-renders; verify and retype.
+        for _ in 0..<4 {
+            let current = (field.value as? String) ?? ""
+            if !current.isEmpty && current != field.placeholderValue {
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+            }
+            for character in text {
+                field.typeText(String(character))
+            }
+            if (field.value as? String) == text { break }
         }
-        field.typeText(text + (submit ? "\n" : ""))
+        XCTAssertEqual(field.value as? String, text, "field did not take the text")
+        if submit { field.typeText("\n"); sleep(1) }
     }
 
     private func tab(_ label: String) -> XCUIElement {
@@ -110,7 +118,6 @@ final class CaptureTests: XCTestCase {
                 replaceText(in: field("New Item"), with: item, submit: true)
             }
             if index == 0 { record("create-filled") }
-            if app.keyboards.count > 0 { app.keyboards.buttons["Return"].firstMatch.tap() }
             let save = app.buttons["Save"].firstMatch
             XCTAssertTrue(save.waitForExistence(timeout: 5))
             save.tap()
