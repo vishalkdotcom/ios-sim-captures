@@ -1,0 +1,89 @@
+name: BoxHelper simulator captures
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Test to run (-only-testing value)"
+        default: "BoxHelperUITests/ExploreTests"
+      boxhelper_ref:
+        description: "BoxHelper commit or branch"
+        default: "7d59046cd0f759c42e47779bbb46bc638b3f4b7f"
+      device:
+        description: "Simulator device type name"
+        default: "iPhone 17 Pro"
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone BoxHelper at the requested ref
+        run: |
+          git clone --quiet https://github.com/HOCKULUS/BoxHelper.git bh
+          git -C bh checkout --quiet "${{ inputs.boxhelper_ref }}"
+          git -C bh log -1 --format='BoxHelper %H %cs %s'
+
+      - name: Attach capture tests (build-step only; app sources untouched)
+        run: |
+          python3 scripts/add_uitests_group.py bh/BoxHelper.xcodeproj/project.pbxproj
+          mkdir -p bh/BoxHelperUITests
+          cp BoxHelperUITests/*.swift bh/BoxHelperUITests/
+          cp scripts/Capture.xcscheme bh/BoxHelper.xcodeproj/xcshareddata/xcschemes/Capture.xcscheme
+          git -C bh status --short
+
+      - name: Pick and boot simulator
+        run: |
+          xcodebuild -version
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x['platform']=='iOS' and x['isAvailable']]; r.sort(key=lambda x:[int(p) for p in x['version'].split('.')]); print(r[-1]['identifier'])")
+          echo "runtime $RUNTIME"
+          UDID=$(xcrun simctl create capture "${{ inputs.device }}" "$RUNTIME")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --operatorName ' ' --batteryState charged --batteryLevel 100
+
+      - name: Build and run capture test
+        env:
+          TEST_RUNNER_SHOT_DIR: ${{ github.workspace }}/shots
+        run: |
+          mkdir -p shots
+          cd bh
+          set -o pipefail
+          xcodebuild test \
+            -project BoxHelper.xcodeproj \
+            -scheme Capture \
+            -destination "id=$UDID" \
+            -only-testing:"${{ inputs.test }}" \
+            -resultBundlePath ../result.xcresult \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee ../xcodebuild.log | grep -E "error:|warning: .*BoxHelperUITests|Test Case|\*\* (BUILD|TEST)" || true
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Final simctl screenshot
+        if: always()
+        run: xcrun simctl io "$UDID" screenshot shots/zz-simctl-final.png || true
+
+      - name: Upload shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots/
+          if-no-files-found: warn
+
+      - name: Upload log tail
+        if: always()
+        run: tail -n 300 xcodebuild.log > xcodebuild-tail.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs
+          path: xcodebuild-tail.log
