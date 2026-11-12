@@ -15,6 +15,9 @@ on:
       xcode:
         description: "Xcode version on the runner (Xcode_<version>.app)"
         default: "26.4.1"
+      diag:
+        description: "Run the icon diagnostics step"
+        default: "false"
 
 permissions:
   contents: read
@@ -53,6 +56,25 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 --cellularMode active --cellularBars 4 --operatorName ' ' --batteryState charged --batteryLevel 100
+
+      - name: Diagnose icon compilation
+        if: inputs.diag == 'true'
+        run: |
+          cd bh/BoxHelper
+          for icon in AppIcon AppIconPride; do
+            out=$(mktemp -d)
+            echo "== $icon.icon alone"
+            xcrun actool "$icon.icon" --compile "$out" --platform iphonesimulator --minimum-deployment-target 18.0 \
+              --target-device iphone --app-icon "$icon" --output-partial-info-plist "$out/p.plist" \
+              --errors --warnings --notices --output-format human-readable-text 2>&1 | tail -15
+            echo "== $icon.icon ictool"
+            xcrun ictool "$icon.icon" --export-preview iOS Light 128 128 1 0 "$out/prev.png" 2>&1 | tail -5; ls -la "$out" || true
+          done
+          echo "== Assets.xcassets alone"
+          out=$(mktemp -d)
+          xcrun actool Assets.xcassets --compile "$out" --platform iphonesimulator --minimum-deployment-target 18.0 \
+            --target-device iphone --output-partial-info-plist "$out/p.plist" --errors --warnings --output-format human-readable-text 2>&1 | tail -15
+          echo "== xcode-select -p: $(xcode-select -p)"; ls "$(xcode-select -p)/../Applications" || true
 
       - name: Build for testing (retries the intermittent .icon actool failure)
         run: |
