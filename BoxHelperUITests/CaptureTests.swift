@@ -75,6 +75,8 @@ final class CaptureTests: XCTestCase {
         for _ in 0..<4 {
             let current = (field.value as? String) ?? ""
             if !current.isEmpty && current != field.placeholderValue {
+                // Put the cursor after the last character before deleting backwards.
+                field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
                 field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
             }
             for character in text {
