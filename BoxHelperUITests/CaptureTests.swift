@@ -34,10 +34,12 @@ final class CaptureTests: XCTestCase {
     }
 
     private func onScreen(_ element: XCUIElement) -> Bool {
-        guard element.exists, element.isHittable else { return false }
+        guard element.exists else { return false }
         let frame = element.frame
         let window = app.windows.firstMatch.frame
-        return frame.minY >= 0 && frame.maxY <= window.maxY && frame.minX >= 0 && frame.maxX <= window.maxX
+        guard !frame.isEmpty, frame.minY >= 0, frame.maxY <= window.maxY,
+              frame.minX >= 0, frame.maxX <= window.maxX else { return false }
+        return element.isHittable
     }
 
     /// Walks onboarding pages and closes system alerts, keyboard tips and app tips.
