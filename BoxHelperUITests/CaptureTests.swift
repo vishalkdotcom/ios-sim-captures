@@ -72,15 +72,17 @@ final class CaptureTests: XCTestCase {
         dismissInterruptions()
         if !((field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) { field.tap() }
         // Typing can drop characters while the form re-renders; verify and retype.
-        for _ in 0..<4 {
+        for attempt in 0..<4 {
             let current = (field.value as? String) ?? ""
             if !current.isEmpty && current != field.placeholderValue {
                 // Put the cursor after the last character before deleting backwards.
                 field.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
                 field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
             }
-            for character in text {
-                field.typeText(String(character))
+            if attempt == 0 {
+                field.typeText(text)
+            } else {
+                for character in text { field.typeText(String(character)) }
             }
             if (field.value as? String) == text { break }
         }
@@ -128,6 +130,14 @@ final class CaptureTests: XCTestCase {
             if index == 0 { record("after-first-save") }
         }
 
+        // The keyboard covers the tab bar; the form dismisses it on scroll.
+        for _ in 0..<3 where app.keyboards.count > 0 {
+            app.otherElements["Camera preview"].firstMatch.exists
+                ? app.otherElements["Camera preview"].firstMatch.swipeDown()
+                : app.swipeDown()
+            sleep(1)
+        }
+        record("create-after-saves")
         tab("Boxes").tap()
         sleep(2)
         dismissInterruptions()
